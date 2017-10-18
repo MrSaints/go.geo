@@ -1,8 +1,15 @@
 package geo
 
 import (
+	"database/sql/driver"
+	"encoding/binary"
 	"errors"
 	"math"
+)
+
+const (
+	wkbHeaderSize  = 5
+	sridHeaderSize = 4
 )
 
 var (
@@ -86,7 +93,7 @@ func (p *Point) Scan(value interface{}) error {
 		// Most likely MySQL's SRID+WKB format.
 		// However, could be a line string or multipoint with only one point.
 		// But those would be invalid for parsing a point.
-		return p.unmarshalWKB(data[4:])
+		return p.unmarshalWKB(data[sridHeaderSize:])
 	}
 
 	if len(data) == 0 {
@@ -96,6 +103,10 @@ func (p *Point) Scan(value interface{}) error {
 	}
 
 	return ErrIncorrectGeometry
+}
+
+func (p *Point) Value() (driver.Value, error) {
+	return leftPad(p.marshalWKB(true), sridHeaderSize), nil
 }
 
 func (p *Point) unmarshalXY(data []byte, littleEndian bool) {
@@ -117,9 +128,41 @@ func (p *Point) unmarshalWKB(data []byte) error {
 		return ErrIncorrectGeometry
 	}
 
-	p.unmarshalXY(data[5:], littleEndian)
+	p.unmarshalXY(data[wkbHeaderSize:], littleEndian)
 
 	return nil
+}
+
+func (p *Point) marshalXY(littleEndian bool) []byte {
+	b := make([]byte, 16)
+
+	var endian binary.ByteOrder = binary.BigEndian
+	if littleEndian {
+		endian = binary.LittleEndian
+	}
+
+	endian.PutUint64(b[:8], math.Float64bits(p.X()))
+	endian.PutUint64(b[8:16], math.Float64bits(p.Y()))
+
+	return b
+}
+
+func (p *Point) marshalWKB(littleEndian bool) []byte {
+	b := make([]byte, wkbHeaderSize)
+
+	// Endianness
+	b[0] = 0
+	var endian binary.ByteOrder = binary.BigEndian
+
+	if littleEndian {
+		b[0] = 1
+		endian = binary.LittleEndian
+	}
+
+	// Geometry type
+	endian.PutUint32(b[1:], uint32(1))
+
+	return append(b, p.marshalXY(littleEndian)...)
 }
 
 // Scan implements the sql.Scanner interface allowing
@@ -167,7 +210,7 @@ func (l *Line) unmarshalWKB(data []byte) error {
 		return ErrIncorrectGeometry
 	}
 
-	length := scanUint32(data[5:9], littleEndian)
+	length := scanUint32(data[wkbHeaderSize:9], littleEndian)
 	if length != 2 {
 		return ErrIncorrectGeometry
 	}
@@ -204,7 +247,7 @@ func (ps *PointSet) Scan(value interface{}) error {
 		return ps.unmarshalWKB(data)
 	}
 
-	return ps.unmarshalWKB(data[4:])
+	return ps.unmarshalWKB(data[sridHeaderSize:])
 }
 
 func (ps *PointSet) unmarshalLinearRing(data []byte, littleEndian bool) error {
@@ -323,4 +366,8 @@ func scanFloat64(data []byte, littleEndian bool) float64 {
 	}
 
 	return math.Float64frombits(v)
+}
+
+func leftPad(b []byte, pad int) []byte {
+	return append(make([]byte, pad), b...)
 }

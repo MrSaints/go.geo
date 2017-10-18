@@ -1,6 +1,9 @@
 package geo
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 var testPathWKB = []byte{1, 2, 0, 0, 0, 6, 0, 0, 0, 205, 228, 155, 109, 110, 114, 87, 192, 174, 158, 147, 222, 55, 50, 64, 64, 134, 56, 214, 197, 109, 114, 87, 192, 238, 235, 192, 57, 35, 50, 64, 64, 173, 47, 18, 218, 114, 114, 87, 192, 25, 4, 86, 14, 45, 50, 64, 64, 10, 75, 60, 160, 108, 114, 87, 192, 224, 161, 40, 208, 39, 50, 64, 64, 149, 159, 84, 251, 116, 114, 87, 192, 96, 147, 53, 234, 33, 50, 64, 64, 195, 158, 118, 248, 107, 114, 87, 192, 89, 139, 79, 1, 48, 50, 64, 64}
 
@@ -84,6 +87,38 @@ func TestPointUnmarshalWKB(t *testing.T) {
 	err = p.unmarshalWKB([]byte{0, 2, 0, 0, 0, 15, 152, 60, 227, 24, 157, 94, 192, 205, 11, 17, 39, 128, 222, 66, 64})
 	if err != ErrIncorrectGeometry {
 		t.Errorf("incorrect error, got %v", err)
+	}
+}
+
+func TestPointMarshalWKB(t *testing.T) {
+	type testData struct {
+		littleEndian bool
+		point        *Point
+		data         []byte
+	}
+
+	tests := []testData{
+		{
+			littleEndian: true,
+			point:        NewPoint(2.0, 4.0),
+			data:         []byte{1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 0, 16, 64},
+		},
+		{
+			littleEndian: false,
+			point:        NewPoint(-122.4546440212, 37.7382859071),
+			data:         []byte{0, 0, 0, 0, 1, 192, 94, 157, 24, 227, 60, 152, 15, 64, 66, 222, 128, 39, 17, 11, 205},
+		},
+		{
+			littleEndian: true,
+			point:        NewPoint(-93.787988, 32.392335),
+			data:         []byte{1, 1, 0, 0, 0, 253, 104, 56, 101, 110, 114, 87, 192, 192, 9, 133, 8, 56, 50, 64, 64},
+		},
+	}
+
+	for i, test := range tests {
+		if got := test.point.marshalWKB(test.littleEndian); !reflect.DeepEqual(got, test.data) {
+			t.Errorf("test %d incorrect wkb, got %v, want %v", i, got, test.data)
+		}
 	}
 }
 
